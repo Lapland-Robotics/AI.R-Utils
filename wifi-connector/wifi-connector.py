@@ -9,6 +9,66 @@ predefined_wifi = {
 }
 
 
+def status():
+    # Command to get WiFi status
+    cmd = ['nmcli', 'device', 'show']
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode == 0:
+        output = result.stdout
+        # Extracting current WiFi network name
+        current_network_match = re.search(r'GENERAL\.CONNECTION: (.*?)[\n\r]', output)
+        current_network = current_network_match.group(1).strip() if current_network_match else None
+
+        # Extracting current IP address
+        ip_match = re.search(r'IP4\.ADDRESS\[1\]:\s+(.*?)\/', output)
+        ip_address = ip_match.group(1).strip() if ip_match else None
+
+        return current_network, ip_address
+    else:
+        return None, None
+
+
+def turn_on_wifi():
+    # Check if WiFi is enabled
+    cmd_check_wifi = ['nmcli', 'radio', 'wifi']
+    result = subprocess.run(cmd_check_wifi, capture_output=True, text=True)
+    
+    if result.returncode == 0:
+        if 'enabled' not in result.stdout.lower():  # WiFi is currently off
+            # Turn on WiFi
+            cmd_turn_on_wifi = ['nmcli', 'radio', 'wifi', 'on']
+            subprocess.run(cmd_turn_on_wifi)
+            time.sleep(20)
+            print("WiFi turned on successfully.")
+        else:
+            print("WiFi is already turned on.")
+    else:
+        print("Failed to check WiFi status.")
+
+
+# TODO: this method need to be triggerd by a external intturpt from the reset switch which connected to GPIO pin
+# using this we can gain the control back to known network if necessary.
+def reset_switch():
+    # Check if WiFi is enabled
+    turn_on_wifi()
+    for ssid, password in predefined_wifi.items():
+        try:
+            subprocess.run(['nmcli', 'device', 'wifi', 'connect', ssid, 'password', password], check=True)
+            connected = True
+            break
+        except subprocess.CalledProcessError:
+            pass
+
+
+# TODO: Display current wifi network SSID and ip address in a led screen
+def display():
+    ssid, ip_address = status()
+    
+    # TODO:  display ssid and ip_address in a led screen
+    #        This will make lot easy to interact(ssh) with the robot
+
+
 @app.route('/scan', methods=['GET'])
 def wifi_scan():
     # Command to scan available WiFi networks
@@ -41,42 +101,17 @@ def connect_wifi():
     subprocess.run(['nmcli', 'device', 'wifi', 'connect', ssid, 'password', password])
     return jsonify({'message': f'Connected to {ssid}'})
 
+
 @app.route('/status', methods=['GET'])
 def get_status():
-    # Command to get WiFi status
-    cmd = ['nmcli', 'device', 'show']
-    result = subprocess.run(cmd, capture_output=True, text=True)
 
-    if result.returncode == 0:
-        output = result.stdout
-        # Extracting current WiFi network name
-        current_network_match = re.search(r'GENERAL\.CONNECTION: (.*?)[\n\r]', output)
-        current_network = current_network_match.group(1).strip() if current_network_match else None
+    current_network, ip_address = status()
 
-        # Extracting current IP address
-        ip_match = re.search(r'IP4\.ADDRESS\[1\]:\s+(.*?)\/', output)
-        ip_address = ip_match.group(1).strip() if ip_match else None
-
+    if current_network and ip_address:
         return jsonify({'current_network': current_network, 'ip_address': ip_address}), 200
     else:
         return jsonify({'message': 'Failed to fetch WiFi status', 'error': result.stderr}), 500
 
-def turn_on_wifi():
-    # Check if WiFi is enabled
-    cmd_check_wifi = ['nmcli', 'radio', 'wifi']
-    result = subprocess.run(cmd_check_wifi, capture_output=True, text=True)
-    
-    if result.returncode == 0:
-        if 'enabled' not in result.stdout.lower():  # WiFi is currently off
-            # Turn on WiFi
-            cmd_turn_on_wifi = ['nmcli', 'radio', 'wifi', 'on']
-            subprocess.run(cmd_turn_on_wifi)
-            time.sleep(20)
-            print("WiFi turned on successfully.")
-        else:
-            print("WiFi is already turned on.")
-    else:
-        print("Failed to check WiFi status.")
 
 if __name__ == '__main__':
     # Check predefined Wi-Fi networks and connect if available
